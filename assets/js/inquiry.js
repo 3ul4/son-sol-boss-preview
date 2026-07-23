@@ -2,8 +2,6 @@
   const form = document.querySelector('[data-inquiry-form]');
   if (!form) return;
 
-  const contactIntents = [...document.querySelectorAll('[data-contact-intent]')];
-  const contactPanels = [...document.querySelectorAll('[data-contact-panel]')];
   const phone = form.querySelector('[name="phone"]');
   const brandInputs = [...form.querySelectorAll('[name="brand"]')];
   const brandGroup = form.querySelector('[data-brand-group]');
@@ -19,6 +17,8 @@
   const reviewDraft = review?.querySelector('[data-review-draft]');
   const reviewNeedsReview = review?.querySelector('[data-review-needs-review]');
   const reviewPrepared = review?.querySelector('[data-review-prepared]');
+  const reviewHandedOff = review?.querySelector('[data-review-handed-off]');
+  const handoffResult = review?.querySelector('[data-handoff-result]');
   const preparedPreview = review?.querySelector('[data-prepared-preview]');
   const reviewActions = review?.querySelector('.inquiry-review-actions');
   const emailLink = review?.querySelector('[data-email-inquiry]');
@@ -40,50 +40,6 @@
     brand: review?.querySelector('[data-draft-brand]'),
     package: review?.querySelector('[data-draft-package]')
   };
-
-  function activateIntent(intent, moveFocus = false) {
-    contactIntents.forEach(button => {
-      const active = button.dataset.contactIntent === intent;
-      button.classList.toggle('is-active', active);
-      button.setAttribute('aria-selected', String(active));
-      button.tabIndex = active ? 0 : -1;
-      if (active && moveFocus) button.focus();
-    });
-    contactPanels.forEach(panel => {
-      const active = panel.dataset.contactPanel === intent;
-      panel.classList.toggle('is-active', active);
-      panel.hidden = !active;
-    });
-  }
-
-  function scrollInquiryIntoView() {
-    const workspace = document.querySelector('[data-inquiry-workspace]');
-    if (!workspace) return;
-    workspace.scrollIntoView({ behavior: reducedMotion.matches ? 'auto' : 'smooth', block: 'start' });
-    stepPanels[currentStep]?.querySelector('legend')?.focus({ preventScroll: true });
-  }
-
-  if (contactIntents.length && contactPanels.length) {
-    document.body.classList.add('is-contact-enhanced');
-    const initiallySelected = contactIntents.find(button => button.getAttribute('aria-selected') === 'true');
-    activateIntent(initiallySelected?.dataset.contactIntent || contactIntents[0].dataset.contactIntent);
-    contactIntents.forEach((button, index) => {
-      button.addEventListener('click', () => {
-        activateIntent(button.dataset.contactIntent);
-        if (button.dataset.contactIntent === 'franchise') scrollInquiryIntoView();
-      });
-      button.addEventListener('keydown', event => {
-        let nextIndex = null;
-        if (event.key === 'ArrowRight') nextIndex = (index + 1) % contactIntents.length;
-        if (event.key === 'ArrowLeft') nextIndex = (index - 1 + contactIntents.length) % contactIntents.length;
-        if (event.key === 'Home') nextIndex = 0;
-        if (event.key === 'End') nextIndex = contactIntents.length - 1;
-        if (nextIndex === null) return;
-        event.preventDefault();
-        activateIntent(contactIntents[nextIndex].dataset.contactIntent, true);
-      });
-    });
-  }
 
   function showStep(index, moveFocus = false) {
     currentStep = Math.max(0, Math.min(index, stepPanels.length - 1));
@@ -125,18 +81,28 @@
     reviewState = nextState;
     review?.classList.toggle('is-prepared', nextState === 'prepared');
     review?.classList.toggle('is-needs-review', nextState === 'needs-review');
+    review?.classList.toggle('is-handed-off', nextState === 'handed-off');
     if (reviewIdle) reviewIdle.hidden = nextState !== 'idle';
     if (reviewDraft) reviewDraft.hidden = nextState !== 'draft';
     if (reviewNeedsReview) reviewNeedsReview.hidden = nextState !== 'needs-review';
     if (reviewPrepared) reviewPrepared.hidden = nextState !== 'prepared';
+    if (reviewHandedOff) reviewHandedOff.hidden = nextState !== 'handed-off';
     setActionsEnabled(nextState === 'prepared');
     const messages = {
       idle: 'Your details stay with you.',
       draft: 'Draft details are visible only in this browser.',
       prepared: 'Your inquiry is ready for your review.',
-      needsReview: 'Your details changed. Prepare the inquiry again.'
+      needsReview: 'Your details changed. Prepare the inquiry again.',
+      handedOff: 'Continue in your chosen channel to reach the team.'
     };
-    if (reviewStatus) reviewStatus.textContent = messages[nextState === 'needs-review' ? 'needsReview' : nextState];
+    const messageKey = nextState === 'needs-review' ? 'needsReview' : nextState === 'handed-off' ? 'handedOff' : nextState;
+    if (reviewStatus) reviewStatus.textContent = messages[messageKey];
+  }
+
+  function completeHandoff(message) {
+    if (handoffResult) handoffResult.textContent = message;
+    showReviewState('handed-off');
+    review?.scrollIntoView({ behavior: reducedMotion.matches ? 'auto' : 'smooth', block: 'center' });
   }
 
   function selectedBrandInputs() {
@@ -166,7 +132,7 @@
     if (draftTargets.package) draftTargets.package.textContent = values.package || 'Not specified';
 
     const hasDraft = Object.values(values).some(Boolean) || form.elements.email.value.trim() || form.elements.capital.checked;
-    if (reviewState === 'prepared' || reviewState === 'needs-review') {
+    if (reviewState === 'prepared' || reviewState === 'needs-review' || reviewState === 'handed-off') {
       inquiryText = '';
       if (emailLink) emailLink.href = defaultEmailHref;
       if (preparedPreview) preparedPreview.textContent = '';
@@ -259,6 +225,16 @@
     }
   }
 
+  function sourceReferrer() {
+    if (!document.referrer) return 'Direct or unavailable';
+    try {
+      const referrer = new URL(document.referrer);
+      return `${referrer.hostname}${referrer.pathname}`;
+    } catch {
+      return 'Unavailable';
+    }
+  }
+
   function buildInquiry() {
     const data = new FormData(form);
     const brands = selectedBrandLabels();
@@ -277,21 +253,28 @@
       `Package or budget: ${data.get('package') || 'Not specified'}`,
       `Capital ready: ${data.get('capital') ? 'Yes' : 'Not yet / Prefer to discuss'}`,
       '',
-      'Please send me the current package details and next steps.'
+      'Please send me the current package details and next steps.',
+      '',
+      `Source page: ${location.pathname || '/'}`,
+      `Brand context: ${selectedBrands}`,
+      `Referrer: ${sourceReferrer()}`
     ].join('\n');
     const subject = `Franchise inquiry - ${data.get('name')} - ${subjectBrand}`;
     if (emailLink) emailLink.href = `${defaultEmailHref}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(inquiryText)}`;
     if (preparedPreview) preparedPreview.textContent = inquiryText;
   }
 
-  const params = new URLSearchParams(location.search);
-  const requestedBrands = params.getAll('brand');
-  const recognizedInputs = requestedBrands.map(value => brandInputs.find(input => input.value === value)).filter(Boolean);
-  const namedInputs = recognizedInputs.filter(input => !input.hasAttribute('data-brand-unsure'));
-  if (namedInputs.length) namedInputs.forEach(input => { input.checked = true; });
-  const unsurePrefill = brandInputs.find(input => input.hasAttribute('data-brand-unsure'));
-  if (!namedInputs.length && recognizedInputs.includes(unsurePrefill)) unsurePrefill.checked = true;
-  if (params.get('package') && packageField) packageField.value = params.get('package').slice(0, 100);
+  function prefillFromParams(params) {
+    const requestedBrands = params.getAll('brand');
+    const recognizedInputs = requestedBrands.map(value => brandInputs.find(input => input.value === value)).filter(Boolean);
+    const namedInputs = recognizedInputs.filter(input => !input.hasAttribute('data-brand-unsure'));
+    if (namedInputs.length) namedInputs.forEach(input => { input.checked = true; });
+    const unsurePrefill = brandInputs.find(input => input.hasAttribute('data-brand-unsure'));
+    if (!namedInputs.length && recognizedInputs.includes(unsurePrefill)) unsurePrefill.checked = true;
+    if (params.get('location') && form.elements.city) form.elements.city.value = params.get('location').slice(0, 100);
+    if (params.get('package') && packageField) packageField.value = params.get('package').slice(0, 100);
+  }
+  prefillFromParams(new URLSearchParams(location.search));
 
   nextButtons.forEach(button => button.addEventListener('click', () => {
     validationAttempted = true;
@@ -328,7 +311,11 @@
   });
 
   emailLink?.addEventListener('click', event => {
-    if (reviewState !== 'prepared') event.preventDefault();
+    if (reviewState !== 'prepared') {
+      event.preventDefault();
+      return;
+    }
+    setTimeout(() => completeHandoff('Your email draft is open outside this website. Review it, then press Send in your email app to reach the Son & Sol team.'), 0);
   });
   copyButton?.addEventListener('click', async () => {
     if (reviewState !== 'prepared' || !inquiryText) return;
@@ -336,6 +323,7 @@
       await navigator.clipboard.writeText(inquiryText);
       if (copyStatus) copyStatus.textContent = 'Inquiry details copied.';
       if (copyFallback) copyFallback.hidden = true;
+      completeHandoff('Your inquiry details were copied. Paste and send them in your preferred verified channel to reach the Son & Sol team.');
     } catch {
       if (copyStatus) copyStatus.textContent = 'Copy was blocked. Your prepared text is shown below for manual copying.';
       if (copyFallback) {
@@ -350,5 +338,30 @@
   form.classList.add('is-progressive');
   showStep(0);
   updateDraft();
-  if (location.hash === '#franchise-inquiry') requestAnimationFrame(scrollInquiryIntoView);
+
+  const modal = document.querySelector('[data-inquiry-modal]');
+  if (modal) {
+    let opener = null;
+    const openModal = link => {
+      if (link) {
+        try { prefillFromParams(new URL(link.href, location.href).searchParams); } catch { /* ignore malformed href */ }
+      }
+      showStep(0);
+      updateDraft();
+      if (!modal.open) modal.showModal();
+      form.querySelector('input:not([type="hidden"]), select, textarea')?.focus({ preventScroll: true });
+    };
+    const closeModal = () => { if (modal.open) modal.close(); };
+    modal.addEventListener('close', () => { opener?.focus(); opener = null; });
+    modal.addEventListener('click', event => { if (event.target === modal) closeModal(); });
+    modal.querySelectorAll('[data-inquiry-close]').forEach(button => button.addEventListener('click', closeModal));
+    document.querySelectorAll('a[href*="franchise-inquiry"]').forEach(link => {
+      link.addEventListener('click', event => {
+        if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        opener = link;
+        openModal(link);
+      });
+    });
+  }
 })();

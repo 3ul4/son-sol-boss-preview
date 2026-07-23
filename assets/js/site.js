@@ -146,6 +146,52 @@
   });
   if (brandRows.length) applyBrandSpotlight(brandRows[0]);
 
+  const ownershipVideo = document.querySelector('[data-ownership-video]');
+  let ownershipVideoObserver = null;
+
+  function initializeOwnershipVideo() {
+    if (!ownershipVideo) return;
+    ownershipVideoObserver?.disconnect();
+    ownershipVideo.pause();
+
+    if (reducedMotionQuery.matches) return;
+
+    const playOwnershipVideo = () => {
+      ownershipVideo.play().catch(() => {});
+    };
+
+    if (!('IntersectionObserver' in window)) {
+      playOwnershipVideo();
+      return;
+    }
+
+    ownershipVideoObserver = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting && entry.intersectionRatio >= .2) {
+          playOwnershipVideo();
+          return;
+        }
+        ownershipVideo.pause();
+      });
+    }, { threshold: [0, .2] });
+    ownershipVideoObserver.observe(ownershipVideo);
+  }
+
+  reducedMotionQuery.addEventListener?.('change', initializeOwnershipVideo);
+  initializeOwnershipVideo();
+
+  const franchiseHeroVideo = document.querySelector('[data-franchise-hero-video]');
+
+  function initializeFranchiseHeroVideo() {
+    if (!franchiseHeroVideo) return;
+    franchiseHeroVideo.pause();
+    if (reducedMotionQuery.matches) return;
+    franchiseHeroVideo.play().catch(() => {});
+  }
+
+  reducedMotionQuery.addEventListener?.('change', initializeFranchiseHeroVideo);
+  initializeFranchiseHeroVideo();
+
   const revealSections = [...document.querySelectorAll('[data-reveal-section]')];
   let revealObserver = null;
 
@@ -186,6 +232,27 @@
   const productDialogClose = productDialog?.querySelector('[data-product-dialog-close]');
   let productDialogTrigger = null;
   let inertElements = [];
+  const packageShowcases = [...document.querySelectorAll('.package-showcase-details')];
+
+  function openPackageShowcaseFromHash() {
+    if (!window.location.hash || !packageShowcases.length) return;
+    const target = document.getElementById(window.location.hash.slice(1));
+    if (!target?.matches('.package-showcase-details')) return;
+    packageShowcases.forEach(details => {
+      details.open = details === target;
+    });
+  }
+
+  packageShowcases.forEach(showcase => {
+    showcase.addEventListener('toggle', () => {
+      if (!showcase.open) return;
+      packageShowcases.forEach(other => {
+        if (other !== showcase) other.open = false;
+      });
+    });
+  });
+  window.addEventListener('hashchange', openPackageShowcaseFromHash);
+  openPackageShowcaseFromHash();
 
   function getFocusable(root) {
     if (!root) return [];
